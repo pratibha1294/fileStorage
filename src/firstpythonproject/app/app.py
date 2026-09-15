@@ -1,11 +1,13 @@
 from sqlalchemy import select
 
 from fastapi import Depends, FastAPI, File, Form, HTTPException, UploadFile
-from firstpythonproject.app.schema import PostCreate, PostResponse
 from firstpythonproject.app.db import Post, create_db_and_tables, get_async_session
 from sqlalchemy.ext.asyncio import AsyncSession
 from contextlib import asynccontextmanager
-
+from firstpythonproject.app.images import imagekit
+import shutil
+import os
+import tempfile
 
 
 @asynccontextmanager
@@ -24,17 +26,37 @@ async def upload_file(
     caption: str= Form(""),
     session: AsyncSession= Depends(get_async_session)
 ):
-    post = Post(
-        caption= caption,
-        url="dummy_url",
-        file_type="photo",
-        file_name= "dummy_name"
 
-    )
-    session.add(post)
-    await session.commit()
-    await session.refresh(post)
-    return post
+    temp_file_path = None
+    try:
+        with tempfile.NamedTemporaryFile(delete=False, suffix=os.path.splitext(file.filename)[1]) as temp_file:
+            temp_file_path = temp_file.name
+            shutil.copyfileobj(file.file, temp_file)
+
+        with open(temp_file_path, "rb") as upload_file:
+            upload_result = await imagekit.files.upload(
+                file=upload_file,
+                file_name=file.filename,
+            )
+
+        post = Post(
+            caption=caption,
+            url=upload_result.url,
+            file_type=upload_result.file_type or file.content_type,
+            file_name=upload_result.name or file.filename,
+        )
+        session.add(post)
+        await session.commit()
+        await session.refresh(post)
+        return post
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Upload failed: {exc}")
+    finally:
+        if temp_file_path and os.path.exists(temp_file_path):
+            os.remove(temp_file_path)
+
+
+
 
 @app.get("/feed")
 async def get_feed(
