@@ -10,6 +10,7 @@ import os
 import tempfile
 
 
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await create_db_and_tables()
@@ -39,16 +40,26 @@ async def upload_file(
                 file_name=file.filename,
             )
 
-        post = Post(
+        upload_result=imagekit.upload_file(
+            file= open(temp_file_path, "rb"),
+            file_name= file.filename,
+            use_unique_file_name=True,
+            tags=["backend-upload"]
+        )
+
+        if upload_result.response.http_status_code==200:
+
+            post = Post(
             caption=caption,
             url=upload_result.url,
-            file_type=upload_result.file_type or file.content_type,
-            file_name=upload_result.name or file.filename,
+            file_type="video" if file.content_type.startswith("video") else "image",
+            file_name=upload_result.name
         )
         session.add(post)
         await session.commit()
         await session.refresh(post)
         return post
+
     except Exception as exc:
         raise HTTPException(status_code=502, detail=f"Upload failed: {exc}")
     finally:
