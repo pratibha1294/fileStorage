@@ -8,6 +8,8 @@ from firstpythonproject.app.images import imagekit
 import shutil
 import os
 import tempfile
+from imagekitio.models.UploadFileRequestOptions import UploadFileRequestOptions
+import uuid
 
 
 
@@ -34,37 +36,35 @@ async def upload_file(
             temp_file_path = temp_file.name
             shutil.copyfileobj(file.file, temp_file)
 
-        with open(temp_file_path, "rb") as upload_file:
-            upload_result = await imagekit.files.upload(
-                file=upload_file,
-                file_name=file.filename,
-            )
+        
 
         upload_result=imagekit.upload_file(
             file= open(temp_file_path, "rb"),
             file_name= file.filename,
-            use_unique_file_name=True,
-            tags=["backend-upload"]
+            options=UploadFileRequestOptions(
+                use_unique_file_name=True,
+                tags=["backend-upload"]
+            )
         )
 
-        if upload_result.response.http_status_code==200:
-
+        if upload_result.response_metadata.http_status_code == 200:
             post = Post(
-            caption=caption,
-            url=upload_result.url,
-            file_type="video" if file.content_type.startswith("video") else "image",
-            file_name=upload_result.name
-        )
-        session.add(post)
-        await session.commit()
-        await session.refresh(post)
-        return post
+                caption=caption,
+                url=upload_result.url,
+                file_type="video" if file.content_type.startswith("video/") else "image",
+                file_name=upload_result.name
+            )
+            session.add(post)
+            await session.commit()
+            await session.refresh(post)
+            return post
 
-    except Exception as exc:
-        raise HTTPException(status_code=502, detail=f"Upload failed: {exc}")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
     finally:
         if temp_file_path and os.path.exists(temp_file_path):
-            os.remove(temp_file_path)
+            os.unlink(temp_file_path)
+        file.file.close()
 
 
 
@@ -90,3 +90,22 @@ async def get_feed(
             }
         )
     return {"posts": posts_data}
+
+
+@app.delete("/posts/{post_id}")
+async def delete_post(post_id:str, session:AsyncSession=Depends(get_async_session)):
+    try:
+        post_uuid = uuid.UUID(post_id)
+        result= await session.execute(select(Post).where(Post.id==post_uuid))
+        post= result.scalars().first()
+
+        if not post:
+            raise HTTPException(status_code=404, detail="Post not found")
+        await session.delete(post)
+        await session.commit()
+
+        return {"success": True, "message": "Post Deleted Successfully"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+        
+
