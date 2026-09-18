@@ -1,5 +1,5 @@
 from sqlalchemy import select
-
+from firstpythonproject.app.schemas import PostCreate,PostResponse,UserCreate,UserRead,UserUpdate
 from fastapi import Depends, FastAPI, File, Form, HTTPException, UploadFile
 from firstpythonproject.app.db import Post, create_db_and_tables, get_async_session
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -10,6 +10,7 @@ import os
 import tempfile
 from imagekitio.models.UploadFileRequestOptions import UploadFileRequestOptions
 import uuid
+from firstpythonproject.app.users import auth_backend,current_active_user,fastapi_users
 
 
 
@@ -22,6 +23,13 @@ async def lifespan(app: FastAPI):
 
 
 app=FastAPI(lifespan=lifespan)
+
+app.include_router(fastapi_users.get_auth_router(auth_backend),prefix= "/auth/jwt", tags=["auth"])
+app.include_router(fastapi_users.get_register_router(UserRead, UserCreate), prefix="/auth", tags=["auth"])
+app.include_router(fastapi_users.get_reset_password_router(),prefix= "/auth", tags=["auth"])
+app.include_router(fastapi_users.get_verify_router(UserRead),prefix= "/auth", tags=["auth"])
+app.include_router(fastapi_users.get_users_router(UserRead,UserUpdate),prefix= "/users", tags=["users"])
+
 
 @app.post("/upload")
 async def upload_file(
